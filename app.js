@@ -14,24 +14,22 @@ const els = {
   pallets: document.getElementById("pallets"),
   bookingWindow: document.getElementById("bookingWindow"),
   bookingDate: document.getElementById("bookingDate"),
+  freeTextNote: document.getElementById("freeTextNote"),
   fatalError: document.getElementById("fatalError"),
   summaryBox: document.getElementById("summaryBox"),
   summaryPostal: document.getElementById("summaryPostal"),
   summarySlots: document.getElementById("summarySlots"),
   summaryPallets: document.getElementById("summaryPallets"),
-  summaryTransport: document.getElementById("summaryTransport"),
   summaryBookingWindow: document.getElementById("summaryBookingWindow"),
   summaryBookingDate: document.getElementById("summaryBookingDate"),
+  summaryFreeTextNote: document.getElementById("summaryFreeTextNote"),
   summaryCount: document.getElementById("summaryCount"),
   summaryBest: document.getElementById("summaryBest"),
   resultsSection: document.getElementById("resultsSection"),
-  resultsBody: document.getElementById("resultsBody"),
-  transportOptions: Array.from(document.querySelectorAll(".transport-option")),
-  transportInputs: Array.from(document.querySelectorAll('input[name="transportType"]'))
+  resultsBody: document.getElementById("resultsBody")
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  setupTransportToggle();
   els.slots.addEventListener("input", syncDerivedFieldsFromSlots);
   syncDerivedFieldsFromSlots();
 
@@ -45,31 +43,23 @@ document.addEventListener("DOMContentLoaded", () => {
   els.form.addEventListener("reset", onReset);
 });
 
-function setupTransportToggle() {
-  els.transportInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      els.transportOptions.forEach((option) => {
-        option.classList.toggle("active", option.querySelector("input").checked);
-      });
-
-      if (getTransportType() === "FTL") {
-        els.slots.value = "34";
-        if (!els.pallets.value || Number(els.pallets.value) === 1 || Number(els.pallets.value) === Number(els.slots.dataset.lastAutoValue || 1)) {
-          els.pallets.value = "34";
-        }
-      }
-      syncDerivedFieldsFromSlots();
-    });
-  });
-}
-
 function syncDerivedFieldsFromSlots() {
   const slots = Number(els.slots.value);
   const pallets = calculatePalletsFromSlots(slots);
   els.slots.dataset.lastAutoValue = Number.isFinite(pallets) ? String(pallets) : "";
-  if (!els.pallets.matches(":focus") && (els.pallets.value === "" || els.pallets.value === "1" || els.pallets.value === els.pallets.dataset.lastAutoValueOld || Number(els.pallets.value) === Number(els.slots.dataset.previousAutoValue || 1))) {
+
+  if (
+    !els.pallets.matches(":focus") &&
+    (
+      els.pallets.value === "" ||
+      els.pallets.value === "1" ||
+      els.pallets.value === els.pallets.dataset.lastAutoValueOld ||
+      Number(els.pallets.value) === Number(els.slots.dataset.previousAutoValue || 1)
+    )
+  ) {
     els.pallets.value = Number.isFinite(pallets) ? String(pallets) : "";
   }
+
   els.pallets.dataset.lastAutoValueOld = Number.isFinite(pallets) ? String(pallets) : "";
   els.slots.dataset.previousAutoValue = Number.isFinite(pallets) ? String(pallets) : "";
 }
@@ -110,6 +100,7 @@ function parseSemicolonCsv(text) {
   const lines = text.replace(/\r/g, "").split("\n").filter(line => line.trim() !== "");
   if (!lines.length) return [];
   const headers = splitCsvLine(lines[0]).map(h => h.trim());
+
   return lines.slice(1).map(line => {
     const values = splitCsvLine(line);
     const row = {};
@@ -124,6 +115,7 @@ function splitCsvLine(line) {
   const result = [];
   let current = "";
   let inQuotes = false;
+
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '"') {
@@ -140,6 +132,7 @@ function splitCsvLine(line) {
       current += char;
     }
   }
+
   result.push(current);
   return result;
 }
@@ -151,6 +144,7 @@ function parseRatesCsv(text) {
       const match = key.match(/^Zone\s+(\d+)$/i);
       if (match) zonePrices[match[1]] = parseGermanNumber(row[key]);
     });
+
     return {
       forwarder: (row["Forwarder"] || "").trim(),
       chgFrom: parseGermanNumber(row["CHG from"]),
@@ -225,10 +219,6 @@ function formatDisplayDate(value) {
   return `${day}.${month}.${year}`;
 }
 
-function getTransportType() {
-  return els.transportInputs.find(input => input.checked)?.value || "Teilladung";
-}
-
 function showFatal(text) {
   els.fatalError.textContent = text;
   els.fatalError.style.display = "block";
@@ -245,12 +235,11 @@ function onReset() {
     els.summaryBox.style.display = "none";
     els.resultsSection.style.display = "none";
     els.resultsBody.innerHTML = `<tr><td colspan="8" class="muted">Noch keine Berechnung.</td></tr>`;
-    els.transportInputs.forEach(input => { input.checked = input.value === "Teilladung"; });
-    els.transportOptions.forEach(option => { option.classList.toggle("active", option.querySelector("input").checked); });
     els.slots.value = "1";
     els.pallets.value = "1";
     els.bookingWindow.value = "";
     els.bookingDate.value = "";
+    els.freeTextNote.value = "";
     syncDerivedFieldsFromSlots();
   }, 0);
 }
@@ -265,20 +254,22 @@ async function onSubmit(event) {
   const postalCode = normalizePostalCode(postalCodeRaw);
   const slots = Number(els.slots.value);
   const pallets = Number(els.pallets.value);
-  const transportType = getTransportType();
   const bookingWindow = els.bookingWindow.value.trim();
   const bookingDate = els.bookingDate.value;
+  const freeTextNote = els.freeTextNote.value.trim();
 
   if (!postalCode) return;
   if (!Number.isFinite(slots) || slots <= 0) return;
   if (!Number.isFinite(pallets) || pallets <= 0) return;
 
   const calculations = calculateAll(postalCode, slots, pallets);
+
   if (!calculations.results.length) {
     const zoneExistsAnywhere = state.zones.some(z => zoneMatchesPostal(z, postalCode));
     const reason = zoneExistsAnywhere
       ? `Für die PLZ ${postalCodeRaw} wurde kein passender Tarif gefunden.`
       : `Keine Zone gefunden. Für die PLZ ${postalCodeRaw} liegt aktuell keine Zuordnung vor.`;
+
     showFatal(reason);
     els.summaryBox.style.display = "none";
     els.resultsSection.style.display = "none";
@@ -289,9 +280,9 @@ async function onSubmit(event) {
     postalCode: postalCodeRaw,
     slots,
     pallets,
-    transportType,
     bookingWindow,
     bookingDate,
+    freeTextNote,
     resultCount: calculations.results.length,
     best: calculations.results[0]
   });
@@ -323,6 +314,7 @@ function calculateAll(postalCode, slots, pallets) {
     }
 
     const viable = [];
+
     matchingRates.forEach((rate) => {
       const rawZonePrice = rate.zonePrices[zoneInfo.zone];
       if (!Number.isFinite(rawZonePrice) || rawZonePrice >= 90000) return;
@@ -382,6 +374,7 @@ function findZoneForForwarder(forwarder, postalCode) {
     zoneMatchesPostal(row, postalCode)
   );
   if (specific) return specific;
+
   return state.zones.find((row) =>
     normalizeName(row.forwarder) === "all" &&
     zoneMatchesPostal(row, postalCode)
@@ -392,24 +385,27 @@ function zoneMatchesPostal(zoneRow, postalCode) {
   const input = normalizePostalCode(postalCode);
   const from = normalizePostalCode(zoneRow.destFromRaw);
   const to = normalizePostalCode(zoneRow.destToRaw);
+
   if (!input || !from || !to) return false;
 
   const inputNum = Number(input);
   const fromNum = Number(from);
   const toNum = Number(to);
+
   if ([inputNum, fromNum, toNum].every(Number.isFinite)) {
     return inputNum >= fromNum && inputNum <= toNum;
   }
+
   return input >= from && input <= to;
 }
 
-function renderSummary({ postalCode, slots, pallets, transportType, bookingWindow, bookingDate, resultCount, best }) {
+function renderSummary({ postalCode, slots, pallets, bookingWindow, bookingDate, freeTextNote, resultCount, best }) {
   els.summaryPostal.textContent = postalCode;
   els.summarySlots.textContent = new Intl.NumberFormat("de-DE").format(slots);
   els.summaryPallets.textContent = new Intl.NumberFormat("de-DE").format(pallets);
-  els.summaryTransport.textContent = transportType;
   els.summaryBookingWindow.textContent = bookingWindow || "—";
   els.summaryBookingDate.textContent = formatDisplayDate(bookingDate);
+  els.summaryFreeTextNote.textContent = freeTextNote || "—";
   els.summaryCount.textContent = new Intl.NumberFormat("de-DE").format(resultCount);
   els.summaryBest.textContent = `${best.forwarder} (${formatMoney(best.totalPrice)})`;
   els.summaryBox.style.display = "grid";
@@ -418,6 +414,7 @@ function renderSummary({ postalCode, slots, pallets, transportType, bookingWindo
 function renderResults(results) {
   els.resultsSection.style.display = "block";
   els.resultsBody.innerHTML = "";
+
   results.forEach((row, index) => {
     const tr = document.createElement("tr");
     if (index === 0) tr.className = "best-row";
@@ -439,6 +436,7 @@ function renderResults(results) {
       <td class="right total-price">${formatMoney(row.totalPrice)}</td>
       <td>${emailButton}</td>
     `;
+
     els.resultsBody.appendChild(tr);
   });
 }
@@ -455,23 +453,18 @@ function createEmailRequest(forwarder) {
   const pallets = els.pallets.value.trim();
   const bookingWindow = els.bookingWindow.value.trim();
   const bookingDate = formatDisplayDate(els.bookingDate.value);
-  const transportType = getTransportType();
+  const freeTextNote = els.freeTextNote.value.trim();
 
-  const subject = encodeURIComponent(`Fahrzeuganfrage PLZ ${plz}`);
-  const body = encodeURIComponent(
-`Moin ${forwarder},
+  let bodyText = `Guten Tag zusammen,\n\nich benötige für folgende Relation ein Fahrzeug:\n\nPLZ ${plz}\n${slots} Stellplätze / ${pallets} Paletten\nZeitfenster ${bookingWindow || "-"}\nTermin ${bookingDate || "-"}\n`;
 
-ich benötige für folgende Relation ein Fahrzeug:
+  if (freeTextNote) {
+    bodyText += `Hinweis ${freeTextNote}\n`;
+  }
 
-PLZ: ${plz}
-Stellplätze: ${slots}
-Paletten: ${pallets}
-Transportart: ${transportType}
-Zeitfenster Buchung: ${bookingWindow || "-"}
-Termin: ${bookingDate || "-"}
+  bodyText += `\nVielen Dank und kurze Rückmeldung.`;
 
-Vielen Dank.`
-  );
+  const subject = encodeURIComponent(`Transportanfrage ${plz}`);
+  const body = encodeURIComponent(bodyText);
 
   window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
 }
@@ -485,5 +478,7 @@ function escapeHtml(value) {
 }
 
 function escapeJs(value) {
-  return String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  return String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'");
 }
