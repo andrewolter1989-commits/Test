@@ -3,6 +3,7 @@ const state = {
   zones: [],
   floater: {},
   ancillary: {},
+  emails: {},
   initialized: false
 };
 
@@ -74,17 +75,19 @@ function syncDerivedFieldsFromSlots() {
 }
 
 async function loadAllData() {
-  const [ratesText, zonesText, floater, ancillary] = await Promise.all([
+  const [ratesText, zonesText, floater, ancillary, emails] = await Promise.all([
     fetchText("rates.csv"),
     fetchText("zones.csv"),
     fetchJson("floater.json", {}),
-    fetchJson("ancillary.json", {})
+    fetchJson("ancillary.json", {}),
+    fetchJson("emails.json", {})
   ]);
 
   state.rates = parseRatesCsv(ratesText);
   state.zones = parseZonesCsv(zonesText);
   state.floater = normalizeFloater(floater);
   state.ancillary = normalizeAncillary(ancillary);
+  state.emails = emails || {};
 }
 
 async function fetchText(path) {
@@ -241,7 +244,7 @@ function onReset() {
     clearFatal();
     els.summaryBox.style.display = "none";
     els.resultsSection.style.display = "none";
-    els.resultsBody.innerHTML = `<tr><td colspan="7" class="muted">Noch keine Berechnung.</td></tr>`;
+    els.resultsBody.innerHTML = `<tr><td colspan="8" class="muted">Noch keine Berechnung.</td></tr>`;
     els.transportInputs.forEach(input => { input.checked = input.value === "Teilladung"; });
     els.transportOptions.forEach(option => { option.classList.toggle("active", option.querySelector("input").checked); });
     els.slots.value = "1";
@@ -423,6 +426,9 @@ function renderResults(results) {
       ? `<span class="badge">Günstigster</span><span class="provider-name">${escapeHtml(row.forwarder)}</span>`
       : `<span class="provider-name">${escapeHtml(row.forwarder)}</span>`;
 
+    const emailAddress = state.emails[row.forwarder] || "";
+    const emailButton = `<button type="button" class="email-btn ${emailAddress ? "" : "secondary"}" onclick="createEmailRequest('${escapeJs(row.forwarder)}')">${emailAddress ? "E-Mail-Anfrage erstellen" : "E-Mail fehlt"}</button>`;
+
     tr.innerHTML = `
       <td>${providerCell}</td>
       <td>${escapeHtml(row.zone)}</td>
@@ -431,9 +437,43 @@ function renderResults(results) {
       <td class="right">${formatMoney(row.floaterEuro)}</td>
       <td class="right">${formatMoney(row.ancillaryCharge)}</td>
       <td class="right total-price">${formatMoney(row.totalPrice)}</td>
+      <td>${emailButton}</td>
     `;
     els.resultsBody.appendChild(tr);
   });
+}
+
+function createEmailRequest(forwarder) {
+  const to = state.emails[forwarder] || "";
+  if (!to) {
+    alert(`Für ${forwarder} ist noch keine E-Mail-Adresse in emails.json hinterlegt.`);
+    return;
+  }
+
+  const plz = els.postalCode.value.trim();
+  const slots = els.slots.value.trim();
+  const pallets = els.pallets.value.trim();
+  const bookingWindow = els.bookingWindow.value.trim();
+  const bookingDate = formatDisplayDate(els.bookingDate.value);
+  const transportType = getTransportType();
+
+  const subject = encodeURIComponent(`Fahrzeuganfrage PLZ ${plz}`);
+  const body = encodeURIComponent(
+`Moin ${forwarder},
+
+ich benötige für folgende Relation ein Fahrzeug:
+
+PLZ: ${plz}
+Stellplätze: ${slots}
+Paletten: ${pallets}
+Transportart: ${transportType}
+Zeitfenster Buchung: ${bookingWindow || "-"}
+Termin: ${bookingDate || "-"}
+
+Vielen Dank.`
+  );
+
+  window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
 }
 
 function escapeHtml(value) {
@@ -441,5 +481,9 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;");
+    .replace(/"/g, "&quot;");
+}
+
+function escapeJs(value) {
+  return String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
